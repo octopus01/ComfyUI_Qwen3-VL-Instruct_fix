@@ -46,6 +46,8 @@ class Qwen3_VQA:
                     {"default": "none"},
                 ),  # add quantization type selection
                 "keep_model_loaded": ("BOOLEAN", {"default": False}),
+                "device_map_mode": (["cuda", "auto"], {"default": "cuda"}),
+                "cuda_device": ("INT", {"default": 0, "min": 0, "max": 8, "step": 1}),
                 "temperature": (
                     "FLOAT",
                     {"default": 0.7, "min": 0, "max": 1, "step": 0.1},
@@ -102,6 +104,8 @@ class Qwen3_VQA:
         source_path=None,
         image=None,  # add image parameter
         attention="eager",
+        device_map_mode="cuda",   # ← 新增
+        cuda_device=0,            # ← 新增
     ):
         if seed != -1:
             torch.manual_seed(seed)
@@ -137,11 +141,16 @@ class Qwen3_VQA:
                 )
             else:
                 quantization_config = None
-
+            # 全模型放到指定 GPU
+            if device_map_mode == "cuda":
+                device_map = {"": f"cuda:{cuda_device}"}  
+            # 自动分配多卡        
+            else:
+                device_map = "auto"  
             self.model = Qwen3VLForConditionalGeneration.from_pretrained(
                 self.model_checkpoint,
                 dtype=torch.bfloat16 if self.bf16_support else torch.float16,
-                device_map="auto",
+                device_map=device_map,
                 attn_implementation=attention,
                 quantization_config=quantization_config,
             )
@@ -219,6 +228,8 @@ class Qwen3_VQA:
                 clean_up_tokenization_spaces=False,
                 temperature=temperature,
             )
+            # ✅ 取第一个元素并去掉空格，确保返回单字符串
+            result_text = result[0].strip() if result else ""
 
             if not keep_model_loaded:
                 del self.processor  # release processor memory
@@ -229,4 +240,4 @@ class Qwen3_VQA:
                     torch.cuda.empty_cache()  # release GPU memory
                     torch.cuda.ipc_collect()
 
-            return (result,)
+            return (result_text,)
